@@ -1,0 +1,25 @@
+{
+    "config": {
+      "step": {
+        "user": {
+          "title": "Sense Bank Currency",
+          "description": "Set up the Sense Bank USD/UAH rate monitor.",
+          "data": {
+            "scan_interval": "Polling interval (minutes)"
+          }
+        }
+      }
+    },
+    "options": {
+      "step": {
+        "init": {
+          "title": "Sense Bank Currency Options",
+          "description": "Adjust the polling interval.",
+          "data": {
+            "scan_interval": "Polling interval (minutes)"
+          }
+        }
+      }
+    }
+  }
+  
