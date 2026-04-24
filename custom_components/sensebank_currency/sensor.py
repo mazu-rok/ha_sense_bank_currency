@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    RestoreSensor,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -78,9 +79,9 @@ async def _fetch_rate(session) -> dict | None:
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        async_add_entities: AddEntitiesCallback,
 ) -> None:
     scan_interval = entry.options.get(
         CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -115,9 +116,9 @@ class SenseBankRateSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
     def __init__(
-        self,
-        coordinator: DataUpdateCoordinator,
-        description: SensorEntityDescription,
+            self,
+            coordinator: DataUpdateCoordinator,
+            description: SensorEntityDescription,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
@@ -136,48 +137,69 @@ class SenseBankRateSensor(CoordinatorEntity, SensorEntity):
         return {"last_updated": self.coordinator.data.get("last_updated")}
 
 
-class SenseBankTrendSensor(CoordinatorEntity, SensorEntity):
-    """Trend indicator for USD/UAH rate: going_high, going_low, or stable."""
+class SenseBankTrendSensor(CoordinatorEntity, RestoreSensor):
+    """Trend indicator for USD/UAH rate: going_high or going_low."""
 
     _attr_has_entity_name = True
 
     def __init__(
-        self,
-        coordinator: DataUpdateCoordinator,
-        description: SensorEntityDescription,
+            self,
+            coordinator: DataUpdateCoordinator,
+            description: SensorEntityDescription,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"sensebank_{description.key}"
+
         self._prev_rate: float | None = None
+        self._current_trend: str = "going_high"
+
+    async def async_added_to_hass(self) -> None:
+        """Відновлюємо стан після перезавантаження Home Assistant."""
+        await super().async_added_to_hass()
+
+        # Дістаємо останній відомий стан з бази даних HA
+        last_state = await self.async_get_last_state()
+
+        if last_state is not None:
+            # Відновлюємо тренд, якщо він був валідним
+            if last_state.state in ("going_high", "going_low"):
+                self._current_trend = last_state.state
+
+            # Відновлюємо попередній курс з атрибутів
+            if "previous_rate" in last_state.attributes:
+                try:
+                    self._prev_rate = float(last_state.attributes["previous_rate"])
+                except (ValueError, TypeError):
+                    pass
 
     @property
     def native_value(self) -> str:
         if self.coordinator.data is None:
-            return "unknown"
+            return self._current_trend
+
         current = self.coordinator.data.get("rate")
         if current is None:
-            return "unknown"
+            return self._current_trend
+
         if self._prev_rate is None:
             self._prev_rate = current
-            return "stable"
+            return self._current_trend
+
         if current > self._prev_rate:
-            trend = "going_high"
+            self._current_trend = "going_high"
+            self._prev_rate = current
         elif current < self._prev_rate:
-            trend = "going_low"
-        else:
-            trend = "stable"
-        self._prev_rate = current
-        return trend
+            self._current_trend = "going_low"
+            self._prev_rate = current
+
+        return self._current_trend
 
     @property
     def icon(self) -> str:
-        val = self.native_value
-        if val == "going_high":
+        if self.native_value == "going_high":
             return "mdi:trending-up"
-        if val == "going_low":
-            return "mdi:trending-down"
-        return "mdi:trending-neutral"
+        return "mdi:trending-down"
 
     @property
     def extra_state_attributes(self) -> dict:
